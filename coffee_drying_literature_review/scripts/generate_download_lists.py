@@ -10,19 +10,25 @@ output_dir.mkdir(exist_ok=True)
 
 df = pd.read_csv(input_file)
 
-# eliminar duplicados globales por DOI
-df_unique = df.drop_duplicates(subset="doi")
+# separar labels múltiples
+df["labels"] = df["labels"].str.split(";")
 
-# detectar artículos repetidos en diferentes labels
-duplicate_titles = df_unique["title"][df_unique["title"].duplicated(keep=False)]
+# convertir cada label en una fila independiente
+df = df.explode("labels")
 
-df_unique["appears_in_multiple_labels"] = df_unique["title"].isin(duplicate_titles)
+df["labels"] = df["labels"].str.strip()
 
-# columna para marcar si ya descargaste el paper
+# eliminar duplicados reales por DOI
+df_unique = df.drop_duplicates(subset=["doi", "labels"])
+
+# marcar si aparece en múltiples labels
+label_counts = df.groupby("doi")["labels"].nunique()
+
+df_unique["appears_in_multiple_labels"] = df_unique["doi"].map(lambda x: label_counts[x] > 1)
+
 df_unique["downloaded"] = "no"
 
-# seleccionar columnas útiles
-df_unique = df_unique[[
+columns = [
     "title",
     "authors",
     "year",
@@ -31,16 +37,18 @@ df_unique = df_unique[[
     "labels",
     "appears_in_multiple_labels",
     "downloaded"
-]]
+]
 
-# guardar archivo maestro
+df_unique = df_unique[columns]
+
+# guardar lista maestra
 master_file = output_dir / "all_papers_download_list.csv"
 df_unique.to_csv(master_file, index=False)
 
 print("Master download list created")
 
-# generar archivos por label
-labels = df_unique["labels"].dropna().unique()
+# generar lista por label
+labels = sorted(df_unique["labels"].dropna().unique())
 
 for label in labels:
 
